@@ -1,19 +1,19 @@
-# Licensed under the Apache License, Version 2.0 or the MIT License.
-# SPDX-License-Identifier: Apache-2.0 OR MIT
-# Copyright Tock Contributors 2025.
-
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10"
 
 [[package]]
 name = "cmsis-svd"
-version = "0.4"
+version = "0.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "lxml" },
     { name = "six" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/36/0c/a4d0c814fbd356b9eb98da4b89d903d4d293970abe73c77368cac62eb4fe/cmsis-svd-0.4.tar.gz", hash = "sha256:b5f439fc6bbc43c9b56dd822f1f764359d503c685a42f913a1cfc2a3c6c42b2c", size = 34915839, upload-time = "2016-08-11T16:29:39Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/eb/d9/ae4ea459968ade0c09d6f0cec59566c17bd91baf56427f2a048f0c8ddd80/cmsis_svd-0.6.tar.gz", hash = "sha256:70cc58306f801f99a5ad6b49a8b3b4e9cca7d06b0aed77081facd69a84064686", size = 108339, upload-time = "2025-01-05T10:56:23.45Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/96/bc/de266bfab9f3a66f8a9fbf682612315c5b1cab7c9dc6b0c2640e1e8c6468/cmsis_svd-0.6-py3-none-any.whl", hash = "sha256:0c919f45f1b8b93c0d0b9148b2dc23485403db2a24f98700ccd1134015f98ead", size = 120907, upload-time = "2025-01-05T10:56:20.451Z" },
+]
 
 [[package]]
 name = "lxml"
@@ -127,7 +127,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cmsis-svd", specifier = "==0.4" },
+    { name = "cmsis-svd", specifier = "==0.6" },
     { name = "lxml", specifier = ">=6.0.0" },
     { name = "pydentifier", specifier = "==0.1.3" },
     { name = "setuptools", specifier = ">=80.9.0" },
