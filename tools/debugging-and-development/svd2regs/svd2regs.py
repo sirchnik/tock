@@ -49,36 +49,80 @@
 #
 # Author: Stefan Hoelzl <stefan.hoelzl@posteo.de>
 
-import sys
 import argparse
+import datetime
+import sys
+import typing
+
 from subprocess import Popen, PIPE
 from xml.etree import ElementTree as ET
 
 try:
     from cmsis_svd.parser import SVDParser
+    import cmsis_svd.model as svd_models
 except ImportError:
-    print('Could not import CMSIS SVD library')
-    print('pip install cmsis-svd')
+    print("Could not import CMSIS SVD library")
+    print("pip install cmsis-svd")
     sys.exit(1)
 
 try:
     import pydentifier
 except ImportError:
-    print('Could not import Pydentifier library')
-    print('pip install pydentifier')
+    print("Could not import Pydentifier library")
+    print("pip install pydentifier")
     sys.exit(1)
 
 RUST_KEYWORDS = ["mod"]
-COMMENT_MAX_LENGTH = 80
 
 
 def comment(text):
     if text:
-        lines = text.split ("\n")
-        lines = ["/// {}".format(line[:COMMENT_MAX_LENGTH].strip()) for line in lines]
-        return "\n".join (lines)
+        # Convert text to Rust doc comments, but leave line-wrapping to rustfmt
+        return "\n".join(
+            map(lambda s: "/// " + s if len(s) else "///", text.split("\n"))
+        )
     else:
         return ""
+
+
+def flatten_registers(
+    registers: svd_models.SvdRegistersListType,
+) -> list[svd_models.SVDRegister]:
+    res: list[svd_models.SVDRegister] = []
+    for reg in registers:
+        if isinstance(reg, svd_models.SVDRegisterClusterArray):
+            for cluster in reg.clusters:
+                for r in cluster.registers:
+                    if isinstance(r, svd_models.SVDRegisterArray):
+                        res.extend(r.registers)
+                    else:
+                        res.append(r)
+        elif isinstance(reg, svd_models.SVDRegisterArray):
+            res.extend(reg.registers)
+        elif isinstance(reg, svd_models.SVDRegisterCluster):
+            for c1 in reg.clusters:
+                if isinstance(c1, svd_models.SVDRegisterCluster):
+                    for r in c1.registers:
+                        if isinstance(r, svd_models.SVDRegisterArray):
+                            res.extend(r.registers)
+                        else:
+                            res.append(r)
+                else:
+                    for c2 in c1.clusters:
+                        if isinstance(c2, svd_models.SVDRegisterCluster):
+                            for r in c2.registers:
+                                if isinstance(r, svd_models.SVDRegisterArray):
+                                    res.extend(r.registers)
+                                else:
+                                    res.append(r)
+            for r in reg.registers:
+                if isinstance(r, svd_models.SVDRegisterArray):
+                    res.extend(r.registers)
+                else:
+                    res.append(r)
+        else:
+            res.append(reg)
+    return res
 
 
 class CodeBlock(str):
@@ -106,7 +150,7 @@ const {name}_BASE: StaticRef<{title}Registers> =
 """
 
     @staticmethod
-    def fields(base, peripheral):
+    def fields(base, peripheral):  # pyright: ignore[reportIncompatibleMethodOverride]
         assert peripheral.base_address != 0, "Cannot create a `StaticRef` to address 0"
         return {
             "name": peripheral.name,
@@ -127,28 +171,28 @@ register_structs! {{
 """
 
     @staticmethod
-    def fields(name, peripheral, dev):
-        def get_register_size(reg):
-            size = reg._size
+    def fields(
+        name: str, peripheral: svd_models.SVDPeripheral, dev: svd_models.SVDDevice
+    ):
+        def get_register_size(reg: svd_models.SVDRegister):
+            size = reg.size
             if size is None and reg.parent:
                 size = reg.parent.size
             if size is None and dev.size:
                 size = dev.size
             if size is None:
-                raise Exception(
-                    "Cant figure out size of register {}".format(reg.name)
-                )
+                raise Exception("Cant figure out size of register {}".format(reg.name))
             if size not in [8, 16, 32]:
-                raise Exception(
-                    "Invalid size {} of register {}".format(size, reg.name)
-                )
+                raise Exception("Invalid size {} of register {}".format(size, reg.name))
             return size
 
         fields = []
         offset = 0
         count_reserved = 0
-        for register in sorted(peripheral.registers,
-                               key=lambda r: r.address_offset):
+        registers = flatten_registers(peripheral.registers)
+        for register in sorted(registers, key=lambda r: r.address_offset or 0):
+            if register.address_offset is None:
+                continue
             if register.address_offset > offset:
                 fields.append(ReservedStructField(offset, count_reserved))
                 count_reserved += 1
@@ -161,9 +205,7 @@ register_structs! {{
                 # TODO: handle overlapping registers better (Unions?)
                 print(
                     "Offset Mismatch at register {} ({} != {})".format(
-                        register.name,
-                        register.address_offset,
-                        offset
+                        register.name, register.address_offset, offset
                     )
                 )
 
@@ -188,7 +230,7 @@ class PeripheralStructField(CodeBlock):
             return identifier
 
         def definition(reg):
-            if len(reg._fields) == 1:
+            if len(reg.fields) == 1:
                 return ""
             return ", {}::Register".format(reg.name)
 
@@ -203,7 +245,7 @@ class PeripheralStructField(CodeBlock):
             "offset": int(register.address_offset),
             "name": identifier(register.name),
             "size": size,
-            "mode": mode_map.get(register._access, "ReadWrite"),
+            "mode": mode_map.get(register.access, "ReadWrite"),
             "definition": definition(register),
         }
 
@@ -226,10 +268,7 @@ class BitfieldsMacro(CodeBlock):
     @staticmethod
     def fields(registers):
         bitfields = ",".join(Bitfield(register) for register in registers)
-        return {
-            "size": 32,
-            "bitfields": bitfields
-        }
+        return {"size": 32, "bitfields": bitfields}
 
 
 class Bitfield(CodeBlock):
@@ -240,8 +279,8 @@ class Bitfield(CodeBlock):
 
     @staticmethod
     def fields(register):
-        if len (register._fields) > 0:
-            fields = ",\n".join(BitfieldField(field) for field in register._fields)
+        if len(register.fields) > 0:
+            fields = ",\n".join(BitfieldField(field) for field in register.fields)
         else:
             fields = "    VALUE OFFSET (0) NUMBITS (32) []"
         return {
@@ -255,11 +294,14 @@ class BitfieldField(CodeBlock):
     {name} OFFSET({offset}) NUMBITS({size}) {enums}"""
 
     @staticmethod
-    def enumerated_values(field):
+    def enumerated_values(
+        field: svd_models.SVDField,
+    ) -> list[svd_models.SVDEnumeratedValue]:
         values = []
-        for value in field.enumerated_values:
-            if value.description not in [v.description for v in values]:
-                values.append(value)
+        for nested_values in field.enumerated_values or []:
+            for value in nested_values.enumerated_values:
+                if value.description not in [v.description for v in values]:
+                    values.append(value)
         return values
 
     @staticmethod
@@ -267,8 +309,10 @@ class BitfieldField(CodeBlock):
         if not field.is_enumerated_type:
             enums = "[]"
         else:
-            enums = ",\n".join(BitfieldFieldEnum(enum)
-                               for enum in BitfieldField.enumerated_values(field))
+            enums = ",\n".join(
+                BitfieldFieldEnum(enum)
+                for enum in BitfieldField.enumerated_values(field)
+            )
             enums = "[\n{}\n    ]".format(enums)
         return {
             "comment": comment(field.description),
@@ -331,15 +375,18 @@ def generate(name, peripherals, dev):
     peripherals = list(peripherals)
 
     if len(peripherals) == 0:
-        print('Error: no peripheral found.')
-        return ''
+        print("Error: no peripheral found.")
+        return ""
 
     main_peripheral = peripherals[0]
-    return Includes() \
-           + PeripheralStruct(name, main_peripheral, dev) \
-           + generate_bitfields_macro(main_peripheral.registers) \
-           + "\n".join(PeripheralBaseDeclaration(name, peripheral)
-                       for peripheral in peripherals)
+    return (
+        Includes()
+        + PeripheralStruct(name, main_peripheral, dev)
+        + generate_bitfields_macro(flatten_registers(main_peripheral.registers))
+        + "\n".join(
+            PeripheralBaseDeclaration(name, peripheral) for peripheral in peripherals
+        )
+    )
 
 
 def generate_bitfields_macro(registers):
@@ -364,19 +411,42 @@ def rustfmt(code, path, *args):
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("peripheral", help="Name of the Peripheral")
-    parser.add_argument("--group", "-g", action="store_true",
-                        help="Peripheral is a group with several instances")
+    parser.add_argument(
+        "--group",
+        "-g",
+        action="store_true",
+        help="Peripheral is a group with several instances",
+    )
     xor = parser.add_mutually_exclusive_group(required=True)
-    xor.add_argument('--mcu', nargs=2, metavar=('VENDOR', 'MCU'),
-                     help='Vendor and MCU (Database from cmsis-svd)')
-    xor.add_argument('--svd', type=argparse.FileType('r'), const=sys.stdin,
-                     nargs="?", metavar="SVD", help='Path to SVD-File')
-    parser.add_argument("--save", type=argparse.FileType('w'), metavar="FILE",
-                        default=sys.stdout, help="Save generated Code to file")
-    fmt = parser.add_argument_group('rustfmt',
-                                    'Format with rustfmt')
-    fmt.add_argument("--fmt", nargs="?", const='', metavar="'ARG ..'",
-                     help="enable rustfmt with optional arguments")
+    xor.add_argument(
+        "--mcu",
+        nargs=2,
+        metavar=("VENDOR", "MCU"),
+        help="Vendor and MCU (Database from cmsis-svd)",
+    )
+    xor.add_argument(
+        "--svd",
+        type=argparse.FileType("r"),
+        const=sys.stdin,
+        nargs="?",
+        metavar="SVD",
+        help="Path to SVD-File",
+    )
+    parser.add_argument(
+        "--save",
+        type=argparse.FileType("w"),
+        metavar="FILE",
+        default=sys.stdout,
+        help="Save generated Code to file",
+    )
+    fmt = parser.add_argument_group("rustfmt", "Format with rustfmt")
+    fmt.add_argument(
+        "--fmt",
+        nargs="?",
+        const="",
+        metavar="'ARG ..'",
+        help="enable rustfmt with optional arguments",
+    )
     fmt.add_argument("--path", help="path to rustfmt", default="")
     return parser.parse_args()
 
@@ -386,8 +456,14 @@ def main():
     code = generate(*parse(args.peripheral, args.mcu, args.svd, args.group))
     if args.fmt is not None:
         code = rustfmt(code, args.path, *args.fmt.strip("'").split(" "))
+    header = "//" * 40 + "\n"
+    header += "// Autogenerated by svd2regs.py on " + str(datetime.date.today()) + "\n"
+    header += "//   " + " ".join(sys.argv) + "\n"
+    footer = "\n// End autogenerated block\n"
+    footer += "//" * 40 + "\n\n"
+    code = header + code + footer
     args.save.write(code)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
