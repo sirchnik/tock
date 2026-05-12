@@ -9,9 +9,11 @@
  * Maybe the file size of tock is too big.
 **/
 
+/* Note: The device has to be provisioned using the edgeprotecttools first */
+
 MEMORY
 {
-  	rom (rx)  : ORIGIN = 0x32000000, LENGTH = 0x20000
+	rom (rx)  : ORIGIN = 0x32000000, LENGTH = 0x20000
 	prog (rx) : ORIGIN = 0x32020000, LENGTH = 0x20000 /* dynamically/after-compilation inserted apps */
   	ram (rwx) : ORIGIN = 0x34000000, LENGTH = 0x10000
 }

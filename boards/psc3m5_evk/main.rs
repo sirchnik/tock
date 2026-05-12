@@ -18,15 +18,16 @@ use kernel::hil::led::LedHigh;
 use kernel::platform::{KernelResources, SyscallDriverLookup};
 use kernel::syscall::SyscallDriver;
 use kernel::utilities::single_thread_value::SingleThreadValue;
-use kernel::{capabilities, create_capability, static_init, Kernel};
+use kernel::{Kernel, capabilities, create_capability, static_init};
 
 use psc3::chip::{Psc3, Psc3DefaultPeripherals};
 use psc3::tcpwm::Tcpwm0;
-use psc3::{chip_init, gpio};
 #[allow(unused)]
 use psc3::{BASE_VECTORS, IRQS};
+use psc3::{chip_init, gpio};
 
 mod io;
+mod spe_adapter;
 
 // Allocate memory for the stack
 kernel::stack_size! {0x2000}
@@ -133,8 +134,6 @@ unsafe extern "C" {
 /// Main function called after RAM initialized.
 #[unsafe(no_mangle)]
 pub unsafe fn main() {
-    /* Only after peripherals.sys_init() was called peripheral view for debugging works */
-    icache::sys_init_enable_cache();
     cortexm33::support::dmb();
     // set vector-table when coming from secure world
     unsafe {
