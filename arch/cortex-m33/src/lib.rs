@@ -9,6 +9,7 @@
 use core::fmt::Write;
 
 pub mod mpu_v8m;
+pub mod sau;
 
 pub mod mpu {
     use crate::mpu_v8m;
