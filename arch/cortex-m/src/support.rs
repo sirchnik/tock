@@ -146,3 +146,34 @@ pub fn is_interrupt_context() -> bool {
 pub fn is_interrupt_context() -> bool {
     unimplemented!()
 }
+
+/// Returns `true` if the Non-Secure world is running in unprivileged (Thread)
+/// mode, as indicated by the nPRIV bit of the CONTROL_NS register.
+///
+/// This is only meaningful when called from Secure state on an ARMv8-M
+/// processor with Security Extension (TrustZone).
+#[cfg(any(doc, all(target_arch = "arm", target_os = "none")))]
+pub fn is_ns_unprivileged() -> bool {
+    use core::arch::asm;
+    let control_ns: u32;
+
+    // # Safety
+    //
+    // MRS with CONTROL_NS is only available from Secure state. Reading this
+    // register has no side effects.
+    unsafe {
+        asm!(
+            "mrs {0}, CONTROL_NS",
+            out(reg) control_ns,
+            options(nomem, nostack, preserves_flags)
+        );
+    }
+
+    // CONTROL.nPRIV is bit 0: 1 = unprivileged, 0 = privileged.
+    (control_ns & 0x1) != 0
+}
+
+#[cfg(not(any(doc, all(target_arch = "arm", target_os = "none"))))]
+pub fn is_ns_unprivileged() -> bool {
+    unimplemented!()
+}
