@@ -8,6 +8,7 @@
 // Increase the recursion limit for SRSS Registers
 #![recursion_limit = "512"]
 
+#[cfg(feature = "vector-table")]
 use cortexm33::{initialize_ram_jump_to_main, unhandled_interrupt, CortexM33, CortexMVariant};
 
 extern "C" {
@@ -16,6 +17,7 @@ extern "C" {
     fn _estack();
 }
 
+#[cfg(feature = "vector-table")]
 #[cfg_attr(
     all(target_arch = "arm", target_os = "none"),
     link_section = ".vectors"
@@ -41,6 +43,7 @@ pub static BASE_VECTORS: [unsafe extern "C" fn(); 16] = [
     CortexM33::SYSTICK_HANDLER, // SysTick
 ];
 
+#[cfg(feature = "vector-table")]
 #[cfg_attr(all(target_arch = "arm", target_os = "none"), link_section = ".irqs")]
 // used Ensures that the symbol is kept until the final binary
 #[cfg_attr(all(target_arch = "arm", target_os = "none"), used)]

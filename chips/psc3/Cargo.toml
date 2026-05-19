@@ -14,5 +14,10 @@ kernel = { path = "../../kernel" }
 enum_primitive = { path = "../../libraries/enum_primitive" }
 
 
+[features]
+default = ["vector-table"]
+vector-table = []
+
+
 [lints]
 workspace = true
