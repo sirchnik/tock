@@ -54,6 +54,7 @@ pub mod chip_init;
 pub mod cpuss_ppu;
 // pub mod flash;
 pub mod cryptolite;
+pub mod efuse;
 pub mod flashc;
 pub mod gpio;
 mod gpio_registers;
