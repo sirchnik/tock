@@ -332,26 +332,49 @@ pub enum PpcRegion {
     ProtMcpass = 221,                   // Address 0x42b00000, size 0x00100000
 }
 
-pub fn set_trustzone_access(
+/// Set access permissions for a given PPC region.
+///
+/// Parameters:
+/// - `region`: The PPC region for which to set permissions.
+/// - `allow_non_secure`: If true, allows non-secure (and secure) access to the region.
+/// - `allow_nsec_nonpriv`: If true, allows non-secure non-privileged (and privileged) access to the region.
+/// - `allow_sec_nonpriv`: If true, allows secure non-privileged (and privileged) access to the region.
+pub fn set_permissions(
     region: PpcRegion,
-    non_secure: bool,
-    nsec_priviledged: bool,
-    sec_priviledged: bool,
+    allow_non_secure: bool,
+    allow_nsec_nonpriv: bool,
+    allow_sec_nonpriv: bool,
 ) {
     let region_index = region as usize;
     // 32 regions per 32-bit register
     let reg_index = region_index / 32;
     let bit_index = region_index % 32;
 
-    let nsec_reg = &PPC_BASE.ppc_ns_attrs[reg_index];
-    nsec_reg.set((nsec_reg.get() & !(1 << bit_index)) | ((non_secure as u32) << bit_index));
+    assert!(reg_index < PPC_BASE.ppc_ns_attrs.len());
 
-    let sec_priv_reg = &PPC_BASE.ppc_s_p_attrs[reg_index];
-    sec_priv_reg // invert sec_priviledged because 1 means allow non-priv access
-        .set((sec_priv_reg.get() & !(1 << bit_index)) | ((!sec_priviledged as u32) << bit_index));
+    let nsec_reg = &PPC_BASE.ppc_ns_attrs[reg_index];
+    nsec_reg.set((nsec_reg.get() & !(1 << bit_index)) | ((allow_non_secure as u32) << bit_index));
+
     let nsec_priv_reg = &PPC_BASE.ppc_ns_p_attrs[reg_index];
-    nsec_priv_reg
-        .set((nsec_priv_reg.get() & !(1 << bit_index)) | ((!nsec_priviledged as u32) << bit_index));
+    nsec_priv_reg.set(
+        (nsec_priv_reg.get() & !(1 << bit_index)) | ((allow_nsec_nonpriv as u32) << bit_index),
+    );
+    let sec_priv_reg = &PPC_BASE.ppc_s_p_attrs[reg_index];
+    sec_priv_reg
+        .set((sec_priv_reg.get() & !(1 << bit_index)) | ((allow_sec_nonpriv as u32) << bit_index));
+}
+
+pub fn get_permissions(region: PpcRegion) -> (bool, bool, bool) {
+    let region_index = region as usize;
+    // 32 regions per 32-bit register
+    let reg_index = region_index / 32;
+    let bit_index = region_index % 32;
+
+    let allow_non_secure = (PPC_BASE.ppc_ns_attrs[reg_index].get() >> bit_index) & 1 != 0;
+    let allow_nsec_nonpriv = (PPC_BASE.ppc_ns_p_attrs[reg_index].get() >> bit_index) & 1 != 0;
+    let allow_sec_nonpriv = (PPC_BASE.ppc_s_p_attrs[reg_index].get() >> bit_index) & 1 != 0;
+
+    (allow_non_secure, allow_nsec_nonpriv, allow_sec_nonpriv)
 }
 
 pub fn set_protection_context(region: PpcRegion, context: u8) {
@@ -365,12 +388,6 @@ pub fn set_protection_context(region: PpcRegion, context: u8) {
 }
 
 pub fn lock_protection_contexts() {
-    // for i in 0..170 {
-    //     PPC_BASE.ppc_ns_attrs[i].set(0xFFFFFFFF);
-    //     PPC_BASE.ppc_s_p_attrs[i].set(0);
-    //     PPC_BASE.ppc_ns_p_attrs[i].set(0);
-    //     PPC_BASE.ppc_pc_masks[i].set(0xFFFFFFFF);
-    // }
     PPC_BASE.ppc_lock_mask.set(0xFF);
 }
 
