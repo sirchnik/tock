@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 // Copyright Tock Contributors 2024.
 
-//! Module for interacting with legacy 8259 PIC
+//! Module for interacting with legacy 8259 Programmable Interrupt Controller (PIC)
 //!
 //! This implementation is based on guidance from the following sources:
 //!
@@ -56,7 +56,7 @@ const POST_PORT: u16 = 0x80;
 ///
 /// Calling this function will cause interrupts to start firing. This means the IDT must already be
 /// initialized with valid handlers for all possible interrupt numbers (i.e. by a call to
-/// [`handlers::init`][super::handlers::init]).
+/// [`x86::init`]).
 pub unsafe fn init() {
     unsafe {
         let wait = || io::outb(POST_PORT, 0);

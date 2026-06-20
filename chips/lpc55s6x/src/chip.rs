@@ -10,7 +10,9 @@ use cortexm33::{CortexM33, CortexMVariant};
 use kernel::platform::chip::Chip;
 use kernel::platform::chip::InterruptService;
 
+use crate::clocks::Clock;
 use crate::ctimer0::LPCTimer;
+use crate::flexcomm::Flexcomm;
 use crate::gpio::Pins;
 use crate::interrupts;
 use crate::uart::Uart;
@@ -41,6 +43,22 @@ impl<I: InterruptService> Chip for Lpc55s69<'_, I> {
     type MPU = cortexm33::mpu::MPU<8>;
     type UserspaceKernelBoundary = cortexm33::syscall::SysCall;
     type ThreadIdProvider = cortexm33::thread_id::CortexMThreadIdProvider;
+
+    fn init() {
+        unsafe {
+            cortexm33::nvic::disable_all();
+            cortexm33::nvic::clear_all_pending();
+
+            // Set the vector table offset, which requires casting from a BASE_VECTORS to a *const ()
+            // pointer.
+            let vector_table: *const [unsafe extern "C" fn(); 16] =
+                core::ptr::addr_of!(crate::BASE_VECTORS);
+            let vector_table: *const () = vector_table.cast();
+            cortexm33::scb::set_vector_table_offset(vector_table);
+
+            cortexm33::nvic::enable_all();
+        }
+    }
 
     fn service_pending_interrupts(&self) {
         unsafe {
@@ -93,11 +111,11 @@ pub struct Lpc55s69DefaultPeripheral<'a> {
 }
 
 impl Lpc55s69DefaultPeripheral<'_> {
-    pub fn new() -> Self {
+    pub fn new(clocks: &'static Clock, flexcomm: &'static Flexcomm) -> Self {
         Self {
             pins: Pins::new(),
             ctimer0: LPCTimer::new(),
-            uart: Uart::new_uart0(),
+            uart: Uart::new_uart0(clocks, flexcomm),
         }
     }
 }

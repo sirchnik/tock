@@ -19,6 +19,7 @@ use components::led::LedsComponent;
 use kernel::component::Component;
 use kernel::debug::PanicResources;
 use kernel::hil::led::LedHigh;
+use kernel::platform::chip::Chip;
 use kernel::platform::{KernelResources, SyscallDriverLookup};
 use kernel::utilities::single_thread_value::SingleThreadValue;
 use kernel::{capabilities, create_capability, static_init};
@@ -44,7 +45,7 @@ type ProcessPrinterInUse = capsules_system::process_printer::ProcessPrinterText;
 
 /// Resources for when a board panics used by io.rs.
 static PANIC_RESOURCES: SingleThreadValue<PanicResources<ChipHw, ProcessPrinterInUse>> =
-    SingleThreadValue::new(PanicResources::new());
+    SingleThreadValue::new();
 
 type SchedulerInUse = components::sched::round_robin::RoundRobinComponentType;
 
@@ -120,8 +121,7 @@ fn init_clocks(peripherals: &PsoC62xaDefaultPeripherals) {
 /// Main function called after RAM initialized.
 #[no_mangle]
 pub unsafe fn main() {
-    // Set the offset of the vector table
-    cortexm0p::scb::set_vector_table_offset(0x10000000 as *const ());
+    ChipHw::init();
 
     // Initialize deferred calls very early.
     kernel::deferred_call::initialize_deferred_call_state_unsafe::<
@@ -129,8 +129,10 @@ pub unsafe fn main() {
     >();
 
     // Bind global variables to this thread.
-    PANIC_RESOURCES
-        .bind_to_thread_unsafe::<<ChipHw as kernel::platform::chip::Chip>::ThreadIdProvider>();
+    let _ = PANIC_RESOURCES
+        .bind_to_thread_unsafe::<<ChipHw as kernel::platform::chip::Chip>::ThreadIdProvider>(
+            PanicResources::new(),
+        );
 
     let peripherals = static_init!(
         PsoC62xaDefaultPeripherals,

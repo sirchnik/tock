@@ -89,6 +89,7 @@ but the approximate definitions:
 | Board                                                             | Architecture     | MCU            | Interface  | App deployment              | QEMU Support? |
 |-------------------------------------------------------------------|------------------|----------------|------------|-----------------------------|---------------|
 | [WeAct F401CCU6 Core Board](weact_f401ccu6/README.md)             | ARM Cortex-M4    | STM32F401CCU6  | openocd    | custom                      | No            |
+| [ST Nucleo U545RE-Q (skeleton)](nucleo_u545re_q/README.md)        | ARM Cortex-M33   | STM32U545RE-Q  | openocd    | custom                      | No            |
 | [SparkFun RedBoard Red-V](redboard_redv/README.md)                | RISC-V           | FE310-G002     | openocd    | tockloader                  | Yes (5.1)     |
 | [SiFive HiFive1 Rev B](hifive1/README.md)                         | RISC-V           | FE310-G002     | openocd    | tockloader                  | Yes (5.1)     |
 | [BBC HiFive Inventor](hifive_inventor/README.md)                  | RISC-V           | FE310-G003     | tockloader | tockloader                  | No            |
@@ -120,7 +121,7 @@ Virtual hardware platforms that are regularly tested as part of the CI.
 | [Verilated LiteX Simulation](litex/sim/README.md)                 | RISC-V RV32IMC   | LiteX+VexRiscv | custom     | tockloader (flash-file)[^1] | No            |
 | [VeeR EL2 simulation](veer_el2_sim/README.md)                     | RISC-V RV32IMC   | VeeR EL2       | custom     | custom                      | No            |
 | [QEMU i486 Q53](qemu_i486_q35/README.md)                          | i468             | Q35            | custom     | custom                      | Yes           |
-
+| [Seeed Studio LoRa E5 Mini](lora_e5_mini/README.md)               | ARM Cortex-M4    | STM32WLE5JC    | openocd    | tockloader                  | No            |
 [^1]: Tockloader is not able to interact with this board directly, but
       can be used to work on a flash-image of the board, which can in
       turn be flashed onto / read from the board. For more specific

@@ -10,11 +10,18 @@ use kernel::platform::chip::Chip;
 use kernel::platform::chip::InterruptService;
 
 use crate::chip_init;
+use crate::cpuss_ppu;
+use crate::flashc;
 use crate::gpio;
 use crate::hsiom_registers;
+use crate::icache;
 use crate::interrupts;
+use crate::peri;
 use crate::peri_clk;
+use crate::pwrmode;
+use crate::ramc_ppu;
 use crate::scb;
+use crate::srss;
 use crate::tcpwm;
 use cortexm33::{CortexM33, CortexMVariant};
 
@@ -34,6 +41,9 @@ const GPIO_SWDCK_CONFIG: gpio::PreConfig = gpio::PreConfig {
     vref_sel: 0,
     voh_sel: 0,
     non_sec: true,
+    // TODO
+    // non_sec: true,
+    // non_sec: false,
 };
 const GPIO_SWDIO_CONFIG: gpio::PreConfig = gpio::PreConfig {
     out_val: 1,
@@ -49,7 +59,9 @@ const GPIO_SWDIO_CONFIG: gpio::PreConfig = gpio::PreConfig {
     vtrip_sel: 0,
     vref_sel: 0,
     voh_sel: 0,
-    non_sec: true,
+    // TODO
+    // non_sec: true,
+    // non_sec: false,
 };
 pub const GPIO_DEBUG_UART_RX_CONFIG: gpio::PreConfig = gpio::PreConfig {
     out_val: 1,
@@ -82,6 +94,7 @@ pub const GPIO_DEBUG_UART_TX_CONFIG: gpio::PreConfig = gpio::PreConfig {
     vtrip_sel: 0,
     vref_sel: 0,
     voh_sel: 0,
+    // TODO non_sec: false,
     non_sec: true,
 };
 pub const GPIO_SEC_DEBUG_UART_RX_CONFIG: gpio::PreConfig = gpio::PreConfig {
@@ -172,6 +185,14 @@ impl<I: InterruptService> Chip for Psc3<'_, I> {
         }
     }
 
+    fn init() {
+        icache::sys_init_enable_cache();
+        unsafe {
+            cortexm33::nvic::disable_all();
+            cortexm33::nvic::clear_all_pending();
+        }
+    }
+
     fn has_pending_interrupts(&self) -> bool {
         unsafe { cortexm33::nvic::has_pending() }
     }
@@ -252,11 +273,15 @@ impl Psc3DefaultPeripherals<'_> {
 impl InterruptService for Psc3DefaultPeripherals<'_> {
     unsafe fn service_interrupt(&self, interrupt: u32) -> bool {
         // handle all GPIO interrupts
-        if interrupt <= interrupts::IOSS_INTERRUPT_SEC_GPIO {
+        if interrupt <= interrupts::IOSS_INTERRUPTS_SEC_GPIO_9 {
             self.gpio.handle_interrupt();
             return true;
         }
         match interrupt {
+            interrupts::IOSS_INTERRUPT_SEC_GPIO => {
+                self.gpio.handle_interrupt();
+                true
+            }
             interrupts::TCPWM_0_INTERRUPTS_0 => {
                 self.tcpwm.handle_interrupt();
                 true

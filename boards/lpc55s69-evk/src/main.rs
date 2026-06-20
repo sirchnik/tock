@@ -16,6 +16,7 @@ use kernel::component::Component;
 use kernel::debug::PanicResources;
 use kernel::hil::led::LedLow;
 use kernel::hil::uart::{Configure, Parameters, Parity, StopBits, Width};
+use kernel::platform::chip::Chip;
 use kernel::platform::{KernelResources, SyscallDriverLookup};
 use kernel::utilities::single_thread_value::SingleThreadValue;
 use kernel::{capabilities, create_capability, static_init};
@@ -34,8 +35,14 @@ fn system_init() {
     clocks.start_timer_clocks();
 }
 
-unsafe fn get_peripherals() -> &'static mut Lpc55s69DefaultPeripheral<'static> {
-    static_init!(Lpc55s69DefaultPeripheral, Lpc55s69DefaultPeripheral::new())
+unsafe fn get_peripherals(
+    clocks: &'static Clock,
+    flexcomm: &'static flexcomm::Flexcomm,
+) -> &'static Lpc55s69DefaultPeripheral<'static> {
+    static_init!(
+        Lpc55s69DefaultPeripheral,
+        Lpc55s69DefaultPeripheral::new(clocks, flexcomm)
+    )
 }
 
 const FAULT_RESPONSE: capsules_system::process_policies::PanicFaultPolicy =
@@ -50,7 +57,7 @@ type ChipHw = Lpc55s69<'static, Lpc55s69DefaultPeripheral<'static>>;
 type ProcessPrinterInUse = capsules_system::process_printer::ProcessPrinterText;
 
 static PANIC_RESOURCES: SingleThreadValue<PanicResources<ChipHw, ProcessPrinterInUse>> =
-    SingleThreadValue::new(PanicResources::new());
+    SingleThreadValue::new();
 
 pub struct Lpc55s69evk {
     console: &'static capsules_core::console::Console<'static>,
@@ -119,7 +126,7 @@ unsafe fn start() -> (
     Lpc55s69evk,
     &'static Lpc55s69<'static, Lpc55s69DefaultPeripheral<'static>>,
 ) {
-    lpc55s6x::init();
+    ChipHw::init();
 
     // Initialize deferred calls very early.
     kernel::deferred_call::initialize_deferred_call_state::<
@@ -127,11 +134,16 @@ unsafe fn start() -> (
     >();
 
     // Bind global variables to this thread.
-    PANIC_RESOURCES.bind_to_thread::<<ChipHw as kernel::platform::chip::Chip>::ThreadIdProvider>();
+    let _ = PANIC_RESOURCES
+        .bind_to_thread::<<ChipHw as kernel::platform::chip::Chip>::ThreadIdProvider>(
+            PanicResources::new(),
+        );
 
     system_init();
 
-    let peripherals = get_peripherals();
+    let clock = static_init!(clocks::Clock, clocks::Clock::new());
+    let flexcomm0 = static_init!(flexcomm::Flexcomm, flexcomm::Flexcomm::new_id(0).unwrap());
+    let peripherals = get_peripherals(clock, flexcomm0);
 
     peripherals.pins.init();
 
@@ -279,16 +291,11 @@ unsafe fn start() -> (
 
     peripherals.pins.pint.configure_interrupt(0, Edge::Rising);
 
-    let clock = static_init!(clocks::Clock, clocks::Clock::new());
-    let flexcomm0 = static_init!(flexcomm::Flexcomm, flexcomm::Flexcomm::new_id(0).unwrap());
-
     clock.setup_uart_clock(FrgId::Frg0, FrgClockSource::Fro96Mhz);
 
     let uart = &peripherals.uart;
 
     uart.set_clock_source(FrgClockSource::Fro96Mhz);
-    uart.set_clocks(clock);
-    uart.set_flexcomm(flexcomm0);
 
     peripherals.pins.iocon.configure_pin(
         LPCPin::P0_29,

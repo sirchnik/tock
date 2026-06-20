@@ -31,8 +31,15 @@ generated TBF in the Makefile (APP variable), then run:
 $ make flash APP=path/to/app.tbf # program for OpenOCD
 ```
 
-This will generate a new ELF file that can be deployed on the board via gdb and
+This will generate a new ELF file with kernel and app that can be deployed on the board via gdb and
 probe-rs.
+
+To compile an app, you can use the examples in the [`libtock-rs`](https://github.com/tock/libtock-rs) repo.
+For example, to build the `console` app, you can run:
+
+```bash
+$ make psc3m5_evk EXAMPLE=console
+```
 
 ## Protection Contexts
 
@@ -51,5 +58,21 @@ $ pip install edgeprotecttools
 # init configurations
 $ edgeprotecttools -t psoc_c3 init
 # provision the device with the configuration
+$ edgeprotecttools -t psoc_c3 provision-device -p ns_policy/policy_oem_provisioning.json
+```
+
+<sub> There is also a standard Infineon distribution of these tools available
+[here](https://softwaretools.infineon.com/tools/com.ifx.tb.tool.modustoolboxedgeprotectsecuritysuite).
+It is not included by default in the ModusToolbox™ installation.
+</sub>
+
+### Troubleshooting
+
+If provisioning does not work because of "ERROR : Unable to read current LCS value", 
+you can try to erasing the flash with OpenOCD and then try provisioning again.
+
+```bash
+# adapt path to Infineon-OpenOCD if needed
+$ /opt/ModusToolboxProgtools-1.7/openocd/bin/openocd -f interface/kitprog3.cfg -c "set ENABLE_ACQUIRE 0" -f target/infineon/psc3.cfg -c "init; reset init; erase_all; shutdown"
 $ edgeprotecttools -t psoc_c3 provision-device -p ns_policy/policy_oem_provisioning.json
 ```

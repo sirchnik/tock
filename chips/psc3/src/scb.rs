@@ -8,12 +8,12 @@ use core::cell::Cell;
 use core::num::NonZeroUsize;
 use kernel::errorcode::ErrorCode;
 use kernel::hil::uart::{self, Configure, Receive, ReceiveClient, Transmit, TransmitClient};
+use kernel::utilities::io_write::IoWrite;
 use kernel::utilities::StaticRef;
 use kernel::utilities::{
     cells::{OptionalCell, TakeCell},
     registers::interfaces::{ReadWriteable, Readable, Writeable},
 };
-// use spe::serial::{SerialError, SerialSync};
 
 pub struct Scb<'a> {
     registers: StaticRef<regs::ScbRegisters>,
@@ -30,25 +30,9 @@ pub struct Scb<'a> {
 }
 
 impl Scb<'_> {
-    pub const fn new_scb3() -> Self {
+    pub const fn new() -> Self {
         Self {
             registers: regs::SCB3_BASE,
-
-            tx_client: OptionalCell::empty(),
-            tx_buffer: TakeCell::empty(),
-            tx_length: OptionalCell::empty(),
-            tx_position: Cell::new(0),
-
-            rx_client: OptionalCell::empty(),
-            rx_buffer: TakeCell::empty(),
-            rx_length: OptionalCell::empty(),
-            rx_position: Cell::new(0),
-        }
-    }
-
-    pub const fn new_scb0() -> Self {
-        Self {
-            registers: regs::SCB0_BASE,
 
             tx_client: OptionalCell::empty(),
             tx_buffer: TakeCell::empty(),
@@ -246,18 +230,6 @@ impl Scb<'_> {
         }
     }
 
-    pub fn receive_uart_sync(&self, buffer: &mut [u8]) {
-        for byte in buffer.iter_mut() {
-            while self
-                .registers
-                .rx_fifo_status
-                .read(regs::RX_FIFO_STATUS::USED)
-                == 0
-            {}
-            *byte = self.registers.rx_fifo_rd.read(regs::RX_FIFO_RD::DATA) as u8;
-        }
-    }
-
     pub fn transmit_uart_async(
         &self,
         buffer: &'static mut [u8],
@@ -307,45 +279,6 @@ impl Scb<'_> {
         }
     }
 }
-
-// impl SerialSync for Scb<'_> {
-//     fn initialize(&self) -> Result<(), SerialError> {
-//         self.set_standard_uart_mode();
-//         Ok(())
-//     }
-
-//     fn uninitialize(&self) -> Result<(), SerialError> {
-//         self.disable_scb();
-//         Ok(())
-//     }
-
-//     fn send(&self, data: &[u8]) -> Result<(), (SerialError, &'static mut [u8])> {
-//         self.transmit_uart_sync(data);
-//         Ok(())
-//     }
-
-//     fn receive(
-//         &self,
-//         data: &'static mut [u8],
-//         num: usize,
-//     ) -> Result<(), (SerialError, &'static mut [u8])> {
-//         if data.len() < num || num == 0 {
-//             Err((SerialError::Size, data))
-//         } else {
-//             self.receive_uart_sync(&mut data[..num]);
-//             Ok(())
-//         }
-//     }
-
-//     fn transfer(
-//         &self,
-//         data_out: &'static mut [u8],
-//         data_in: &'static mut [u8],
-//         _num: usize,
-//     ) -> Result<(), (SerialError, &'static mut [u8], &'static mut [u8])> {
-//         Err((SerialError::NoSupport, data_out, data_in))
-//     }
-// }
 
 impl<'a> Transmit<'a> for Scb<'a> {
     fn set_transmit_client(&self, client: &'a dyn TransmitClient) {
@@ -463,5 +396,52 @@ impl Configure for Scb<'_> {
             }
             Ok(())
         }
+    }
+}
+
+/// A synchronous writer for panic output using the SCB UART.
+///
+/// This is only to be used by panic messages and is not used within the normal
+/// operation of the Tock kernel.
+struct ScbPanicWriter<'a> {
+    scb: Scb<'a>,
+}
+
+impl IoWrite for ScbPanicWriter<'_> {
+    fn write(&mut self, buf: &[u8]) -> usize {
+        self.scb.transmit_uart_sync(buf);
+        buf.len()
+    }
+}
+
+impl core::fmt::Write for ScbPanicWriter<'_> {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        self.write(s.as_bytes());
+        Ok(())
+    }
+}
+
+/// Configuration for the synchronous SCB panic writer.
+pub struct ScbPanicWriterConfig {
+    pub params: kernel::hil::uart::Parameters,
+}
+
+impl kernel::platform::chip::PanicWriter for Scb<'_> {
+    type Config = ScbPanicWriterConfig;
+
+    unsafe fn create_panic_writer(config: Self::Config) -> impl IoWrite + core::fmt::Write {
+        use kernel::hil::uart::Configure as _;
+
+        let scb = Scb::new();
+
+        scb.disable_scb();
+        scb.set_standard_uart_mode();
+
+        // Configure the UART correctly for panics.
+        let _ = scb.configure(config.params);
+
+        scb.enable_scb();
+
+        ScbPanicWriter { scb }
     }
 }

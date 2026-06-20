@@ -13,6 +13,7 @@ use core::cell::Cell;
 use kernel::component::Component;
 use kernel::debug::PanicResources;
 use kernel::hil::time::Counter;
+use kernel::platform::chip::Chip;
 use kernel::platform::{KernelResources, SyscallDriverLookup};
 use kernel::utilities::cells::NumericCellExt;
 use kernel::utilities::single_thread_value::SingleThreadValue;
@@ -42,7 +43,7 @@ type ProcessPrinter = capsules_system::process_printer::ProcessPrinterNull;
 
 /// Resources for when a board panics used by io.rs.
 static PANIC_RESOURCES: SingleThreadValue<PanicResources<ChipHw, ProcessPrinter>> =
-    SingleThreadValue::new(PanicResources::new());
+    SingleThreadValue::new();
 
 kernel::stack_size! {0x2000}
 
@@ -164,7 +165,7 @@ pub unsafe fn main() {
     //--------------------------------------------------------------------------
 
     // Apply errata fixes and enable interrupts.
-    nrf52840::init();
+    ChipHw::init();
 
     // Initialize deferred calls very early.
     kernel::deferred_call::initialize_deferred_call_state::<

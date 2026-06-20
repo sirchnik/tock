@@ -8,8 +8,6 @@
 
 //! Tock kernel for the PSC3M5-EVK evaluation board.
 
-use core::ptr::addr_of_mut;
-
 use capsules_core::virtualizers::virtual_alarm::VirtualMuxAlarm;
 use components::led::LedsComponent;
 use kernel::component::Component;
@@ -44,7 +42,7 @@ type ProcessPrinterInUse = capsules_system::process_printer::ProcessPrinterText;
 
 /// Resources for when a board panics used by io.rs.
 static PANIC_RESOURCES: SingleThreadValue<PanicResources<ChipHw, ProcessPrinterInUse>> =
-    SingleThreadValue::new(PanicResources::new());
+    SingleThreadValue::new();
 
 type SchedulerInUse = components::sched::round_robin::RoundRobinComponentType;
 
@@ -130,21 +128,23 @@ unsafe extern "C" {
     static _sstack: u8;
 }
 
-/// Main function called after RAM initialized.
-#[unsafe(no_mangle)]
-pub unsafe fn main() {
-    /* Only after peripherals.sys_init() was called peripheral view for debugging works */
-    icache::sys_init_enable_cache();
-    cortexm33::support::dmb();
-    // set vector-table when coming from secure world
-    unsafe {
-        cortexm33::scb::set_vector_table_offset(BASE_VECTORS.as_ptr().cast::<()>());
-    }
-
-    cortexm33::support::set_msplim(core::ptr::addr_of!(_sstack) as u32);
-
+/// This is in a separate, inline(never) function so that its stack frame is
+/// removed when this function returns. Otherwise, the stack space used for
+/// these static_inits is wasted.
+#[inline(never)]
+pub unsafe fn start() -> (
+    &'static kernel::Kernel,
+    Psc3Plattform,
+    &'static Psc3<'static, Psc3DefaultPeripherals<'static>>,
+) {
     /* !Only after chip_init::preinit_peripherals() was called peripheral view for debugging works! */
     chip_init::preinit_peripherals();
+
+    // cortexm33::support::dmb();
+    cortexm33::nvic::enable_all();
+
+    // Todo set MSP limit to the start of the stack (done in infineon board support package)
+    // cortexm33::support::set_msplim(core::ptr::addr_of!(_sstack) as u32);
 
     // Initialize deferred calls very early.
     kernel::deferred_call::initialize_deferred_call_state::<
@@ -152,10 +152,12 @@ pub unsafe fn main() {
     >();
 
     // Bind global variables to this thread.
-    PANIC_RESOURCES.bind_to_thread::<<ChipHw as kernel::platform::chip::Chip>::ThreadIdProvider>();
+    let _ = PANIC_RESOURCES
+        .bind_to_thread::<<ChipHw as kernel::platform::chip::Chip>::ThreadIdProvider>(
+            PanicResources::new(),
+        );
 
-    let peripherals =
-        unsafe { static_init!(Psc3DefaultPeripherals, Psc3DefaultPeripherals::new()) };
+    let peripherals = static_init!(Psc3DefaultPeripherals, Psc3DefaultPeripherals::new());
 
     peripherals.init();
 
@@ -173,7 +175,12 @@ pub unsafe fn main() {
         vtrip_sel: 0,
         vref_sel: 0,
         voh_sel: 0,
-        non_sec: true,
+        non_sec: false,
+        // <<<<<<< HEAD
+        //         non_sec: true,
+        // =======
+        //         non_sec: false,
+        // >>>>>>> origin/psc3
     };
 
     peripherals
@@ -181,10 +188,7 @@ pub unsafe fn main() {
         .get_pin(gpio::PsocPin::P8_5)
         .preconfigure(&GPIO_CONFIG);
 
-    // Set the UART used for panic
-    unsafe { (*addr_of_mut!(io::WRITER)).set_scb(&peripherals.scb3) };
-
-    let chip = unsafe { static_init!(Psc3<Psc3DefaultPeripherals>, Psc3::new(peripherals)) };
+    let chip = static_init!(Psc3<Psc3DefaultPeripherals>, Psc3::new(peripherals));
     PANIC_RESOURCES.get().map(|resources| {
         resources.chip.put(chip);
     });
@@ -196,7 +200,7 @@ pub unsafe fn main() {
         resources.processes.put(processes.as_slice());
     });
 
-    let board_kernel = unsafe { static_init!(Kernel, Kernel::new(processes.as_slice())) };
+    let board_kernel = static_init!(Kernel, Kernel::new(processes.as_slice()));
 
     let process_management_capability =
         create_capability!(capabilities::ProcessManagementCapability);
@@ -371,12 +375,14 @@ pub unsafe fn main() {
         kernel::debug!("{:?}", err);
     });
 
+    (board_kernel, psc3_platform, chip)
+}
+
+/// Main function called after RAM initialized.
+#[no_mangle]
+pub unsafe fn main() {
     let main_loop_capability = create_capability!(capabilities::MainLoopCapability);
 
-    board_kernel.kernel_loop(
-        &psc3_platform,
-        chip,
-        Some(&psc3_platform.ipc),
-        &main_loop_capability,
-    );
+    let (board_kernel, platform, chip) = start();
+    board_kernel.kernel_loop(&platform, chip, Some(&platform.ipc), &main_loop_capability);
 }
