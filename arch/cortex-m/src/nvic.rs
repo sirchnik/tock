@@ -80,12 +80,22 @@ register_structs! {
         /// Interrupt Active Bit Registers
         (0x300 => iabr: [ReadWrite<u32, NvicSetClear::Register>; 32]),
 
-        (0x380 => _reserved2),
+        /// Interrupt Target Non-secure Registers
+        ///
+        /// Bit set => interrupt is non-secure, bit clear => interrupt is secure
+        (0x380 => itns: [ReadWrite<u32>; 16]),
+
+        (0x3C0 => _reserved2),
 
         /// Interrupt Priority Registers
         (0x400 => ipr: [ReadWrite<u32, NvicInterruptPriority::Register>; 252]),
 
-        (0x7f0 => @END),
+        (0x7f0 => _reserved3),
+
+        /// Interrupt Controller Type Register for non-secure world
+        (0x20004 => ictr_ns: ReadOnly<u32, InterruptControllerType::Register>),
+
+        (0x20008 => @END),
     }
 }
 
@@ -120,7 +130,7 @@ register_bitfields![u32,
 
 /// The NVIC peripheral in MMIO space.
 const NVIC: StaticRef<NvicRegisters> =
-    unsafe { StaticRef::new(0xe000e000 as *const NvicRegisters) };
+    unsafe { StaticRef::new(0xE000E000 as *const NvicRegisters) };
 
 /// Number of valid NVIC_XXXX registers. Note this is a ceiling on the number
 /// of available interrupts (as this is the number of banks of 32), but the
@@ -133,6 +143,20 @@ fn number_of_nvic_registers() -> usize {
 pub unsafe fn clear_all_pending() {
     for icpr in NVIC.icpr.iter().take(number_of_nvic_registers()) {
         icpr.set(!0)
+    }
+}
+
+/// Set all interrupts in the range [start_id, end_id] to be non-secure. Note
+/// end_id is inclusive.
+pub fn set_interrupt_non_secure(start_id: u32, end_id: u32) {
+    for block in (start_id / 32)..=(end_id / 32) {
+        let mut mask = NVIC.itns[block as usize].get();
+        for interrupt in (block * 32)..((block + 1) * 32) {
+            if interrupt >= start_id && interrupt <= end_id {
+                mask |= 1 << (interrupt % 32);
+            }
+        }
+        NVIC.itns[block as usize].set(mask);
     }
 }
 

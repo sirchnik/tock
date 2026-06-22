@@ -356,7 +356,8 @@ impl CortexMRegion {
 
         // Limit Address register
         let rlar_value = MPU_RLAR::ENABLE::SET
-            + MPU_RLAR::LIMIT.val((logical_end as u32) >> 5)
+            // TODO: Is this a real tock bug? When IO-Vecs are after each other there's an overlap. `-1` fixes this.
+            + MPU_RLAR::LIMIT.val(((logical_end - 1) as u32) >> 5)
             + MPU_RLAR::PXN::Disable
             + MPU_RLAR::ATTRINDX.val(0);
 

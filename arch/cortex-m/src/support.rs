@@ -16,6 +16,33 @@ pub fn nop() {
     }
 }
 
+///   Data Memory Barrier
+///
+/// Ensures the apparent order of the explicit memory operations before
+///     and after the instruction, without ensuring their completion.
+#[cfg(any(doc, all(target_arch = "arm", target_os = "none")))]
+#[inline(always)]
+pub fn dmb() {
+    use core::arch::asm;
+    unsafe {
+        asm!("dmb sy", options(nostack, preserves_flags));
+    }
+}
+
+/// Set Main Stack Pointer Limit (MSPLIM).
+#[cfg(any(doc, all(target_arch = "arm", target_os = "none")))]
+#[inline(always)]
+pub fn set_msplim(main_stack_ptr_limit: u32) {
+    use core::arch::asm;
+    unsafe {
+        asm!(
+            "msr MSPLIM, {limit}",
+            limit = in(reg) main_stack_ptr_limit,
+            options(nomem, nostack, preserves_flags)
+        );
+    }
+}
+
 /// WFI instruction
 #[cfg(any(doc, all(target_arch = "arm", target_os = "none")))]
 #[inline(always)]
@@ -45,6 +72,20 @@ where
 // Mock implementations for tests on Travis-CI.
 #[cfg(not(any(doc, all(target_arch = "arm", target_os = "none"))))]
 pub fn nop() {
+    unimplemented!()
+}
+
+/// Set Main Stack Pointer Limit (MSPLIM) (mock)
+// Mock implementations for tests on Travis-CI.
+#[cfg(not(any(doc, all(target_arch = "arm", target_os = "none"))))]
+pub fn set_msplim(_main_stack_ptr_limit: u32) {
+    unimplemented!()
+}
+
+/// Data Memory Barrier (mock)
+// Mock implementations for tests on Travis-CI.
+#[cfg(not(any(doc, all(target_arch = "arm", target_os = "none"))))]
+pub fn dmb() {
     unimplemented!()
 }
 
@@ -103,5 +144,36 @@ pub fn is_interrupt_context() -> bool {
 
 #[cfg(not(any(doc, all(target_arch = "arm", target_os = "none"))))]
 pub fn is_interrupt_context() -> bool {
+    unimplemented!()
+}
+
+/// Returns `true` if the Non-Secure world is running in unprivileged (Thread)
+/// mode, as indicated by the nPRIV bit of the CONTROL_NS register.
+///
+/// This is only meaningful when called from Secure state on an ARMv8-M
+/// processor with Security Extension (TrustZone).
+#[cfg(any(doc, all(target_arch = "arm", target_os = "none")))]
+pub fn is_ns_unprivileged() -> bool {
+    use core::arch::asm;
+    let control_ns: u32;
+
+    // # Safety
+    //
+    // MRS with CONTROL_NS is only available from Secure state. Reading this
+    // register has no side effects.
+    unsafe {
+        asm!(
+            "mrs {0}, CONTROL_NS",
+            out(reg) control_ns,
+            options(nomem, nostack, preserves_flags)
+        );
+    }
+
+    // CONTROL.nPRIV is bit 0: 1 = unprivileged, 0 = privileged.
+    (control_ns & 0x1) != 0
+}
+
+#[cfg(not(any(doc, all(target_arch = "arm", target_os = "none"))))]
+pub fn is_ns_unprivileged() -> bool {
     unimplemented!()
 }

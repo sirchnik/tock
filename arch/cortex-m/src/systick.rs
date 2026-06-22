@@ -68,6 +68,7 @@ pub struct SysTick {
     external_clock: bool,
 }
 
+// For non-secure SysTick registers address is the same although somewhere it has been said to be different.
 const BASE_ADDR: *const SystickRegisters = 0xE000E010 as *const SystickRegisters;
 const SYSTICK_BASE: StaticRef<SystickRegisters> = unsafe { StaticRef::new(BASE_ADDR) };
 
