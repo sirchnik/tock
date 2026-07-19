@@ -22,6 +22,15 @@ pub unsafe extern "C" fn systick_handler_arm_v7m() {
     use core::arch::naked_asm;
     naked_asm!(
         "
+    // Save bit 6 (secure state) of EXC_RETURN to PROCESS_WAS_SECURE
+    // only if we are preempting a process (SPSEL bit is set).
+    tst lr, #4                        // Test SPSEL bit (bit 2)
+    beq 50f                           // Skip if kernel was running
+    ldr r0, =PROCESS_WAS_SECURE       // r0 = &PROCESS_WAS_SECURE
+    ubfx r1, lr, #6, #1              // r1 = (LR >> 6) & 1
+    str r1, [r0]                      // *PROCESS_WAS_SECURE = r1
+50:
+
     // Use the CONTROL register to set the thread mode to privileged to switch
     // back to kernel mode.
     //
@@ -88,10 +97,25 @@ pub unsafe extern "C" fn svc_handler_arm_v7m() {
     // to use the alternate (process) stack.
     orr lr, lr, #4                    // LR = LR | 0b100
 
+    // Restore secure state bit in EXC_RETURN for the process.
+    // Clear bit 6 first, then conditionally set it based on PROCESS_WAS_SECURE.
+    bfc lr, #6, #1                    // LR = LR & !(1<<6)
+    ldr r0, =PROCESS_WAS_SECURE       // r0 = &PROCESS_WAS_SECURE
+    ldr r0, [r0]                      // r0 = *PROCESS_WAS_SECURE
+    cmp r0, #0                        // r0 == 0?
+    it ne
+    orrne lr, lr, #0x40               // if secure, LR |= (1<<6)
+
     // Switch to the app.
     bx lr
 
 100: // to_kernel
+    // Save bit 6 (secure state) of EXC_RETURN to PROCESS_WAS_SECURE.
+    // The process may have been executing in the secure world.
+    ldr r0, =PROCESS_WAS_SECURE       // r0 = &PROCESS_WAS_SECURE
+    ubfx r1, lr, #6, #1              // r1 = (LR >> 6) & 1
+    str r1, [r0]                      // *PROCESS_WAS_SECURE = r1
+
     // An application called a syscall. We mark this in the global variable
     // `SYSCALL_FIRED` which is stored in the syscall file.
     // `UserspaceKernelBoundary` will use this variable to decide why the app
@@ -135,6 +159,15 @@ pub unsafe extern "C" fn generic_isr_arm_v7m() {
     use core::arch::naked_asm;
     naked_asm!(
         "
+    // Save bit 6 (secure state) of EXC_RETURN to PROCESS_WAS_SECURE
+    // only if we are preempting a process (SPSEL bit is set).
+    tst lr, #4                        // Test SPSEL bit (bit 2)
+    beq 50f                           // Skip if kernel was running
+    ldr r0, =PROCESS_WAS_SECURE       // r0 = &PROCESS_WAS_SECURE
+    ubfx r1, lr, #6, #1              // r1 = (LR >> 6) & 1
+    str r1, [r0]                      // *PROCESS_WAS_SECURE = r1
+50:
+
     // Use the CONTROL register to set the thread mode to privileged to ensure
     // we are executing as the kernel. This may be redundant if the interrupt
     // happened while the kernel code was executing.
