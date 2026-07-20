@@ -114,12 +114,12 @@ pub const GPIO_SEC_DEBUG_UART_TX_CONFIG: gpio::PreConfig = gpio::PreConfig {
 /// This function configures the secure/non-secure attribute for all GPIO pins.
 /// It must be called from the secure world before transitioning to the non-secure world.
 pub fn configure_gpio_secure_states() {
-    let gpio = gpio::PsocPins::new(true);
+    let gpio = gpio::PsocPins::new(gpio::SecurityState::Secure);
 
     // Default all pins to non-secure
     for pin_opt in gpio.pins.iter() {
         if let Some(pin) = pin_opt {
-            pin.set_nonsecure(true);
+            pin.set_security(gpio::SecurityState::NonSecure);
         }
     }
 
@@ -132,8 +132,20 @@ pub fn configure_gpio_secure_states() {
     // Set specified pins to secure
     for &pin_id in &secure_pins {
         let pin = gpio.get_pin(pin_id);
-        pin.set_nonsecure(false);
+        pin.set_security(gpio::SecurityState::Secure);
     }
+}
+
+/// Init scb0 uart pins for usage in secure domain
+pub fn init_scb0_uart_pins() {
+    let gpio = gpio::PsocPins::new(gpio::SecurityState::Secure);
+    let sec_uart_rx_pin = gpio.get_pin(gpio::PsocPin::P9_2);
+    sec_uart_rx_pin.preconfigure(&GPIO_SEC_DEBUG_UART_RX_CONFIG);
+    sec_uart_rx_pin.set_security(gpio::SecurityState::Secure);
+    sec_uart_rx_pin.make_input();
+    let secu_uart_tx_pin = gpio.get_pin(gpio::PsocPin::P9_3);
+    secu_uart_tx_pin.preconfigure(&GPIO_SEC_DEBUG_UART_TX_CONFIG);
+    secu_uart_tx_pin.set_security(gpio::SecurityState::Secure);
 }
 
 pub struct Psc3NonSecure<'a, I: InterruptService + 'a> {
@@ -285,11 +297,16 @@ pub struct Psc3DefaultPeripherals<'a> {
 }
 
 impl Psc3DefaultPeripherals<'_> {
-    pub fn new(use_secure_registers: bool) -> Self {
+    pub fn new(registers_security: gpio::SecurityState) -> Self {
+        let gpio = gpio::PsocPins::new(registers_security);
+        // Set all pins to secure as some are non-secure by default
+        if registers_security == gpio::SecurityState::Secure {
+            gpio.set_security(gpio::SecurityState::Secure);
+        }
         Self {
             scb3: scb::Scb::new_scb3(),
             tcpwm: tcpwm::Tcpwm0::new(),
-            gpio: gpio::PsocPins::new(use_secure_registers),
+            gpio: gpio,
         }
     }
 
@@ -297,30 +314,30 @@ impl Psc3DefaultPeripherals<'_> {
     pub fn init_debug_pins(&self) {
         let swdck_pin = self.gpio.get_pin(gpio::PsocPin::P1_2);
         swdck_pin.preconfigure(&GPIO_SWDCK_CONFIG);
-        swdck_pin.set_nonsecure(false);
+        swdck_pin.set_security(gpio::SecurityState::Secure);
         let swdio_pin = self.gpio.get_pin(gpio::PsocPin::P1_3);
         swdio_pin.preconfigure(&GPIO_SWDIO_CONFIG);
-        swdio_pin.set_nonsecure(false);
+        swdio_pin.set_security(gpio::SecurityState::Secure);
     }
 
     pub fn init_scb3_uart_pins(&self) {
         let uart_rx_pin = self.gpio.get_pin(gpio::PsocPin::P6_2);
         uart_rx_pin.preconfigure(&GPIO_DEBUG_UART_RX_CONFIG);
-        uart_rx_pin.set_nonsecure(false);
+        uart_rx_pin.set_security(gpio::SecurityState::Secure);
         uart_rx_pin.make_input();
         let uart_tx_pin = self.gpio.get_pin(gpio::PsocPin::P6_3);
         uart_tx_pin.preconfigure(&GPIO_DEBUG_UART_TX_CONFIG);
-        uart_tx_pin.set_nonsecure(false);
+        uart_tx_pin.set_security(gpio::SecurityState::Secure);
     }
 
     pub fn init_scb0_uart_pins(&self) {
         let sec_uart_rx_pin = self.gpio.get_pin(gpio::PsocPin::P9_2);
         sec_uart_rx_pin.preconfigure(&GPIO_SEC_DEBUG_UART_RX_CONFIG);
-        sec_uart_rx_pin.set_nonsecure(false);
+        sec_uart_rx_pin.set_security(gpio::SecurityState::Secure);
         sec_uart_rx_pin.make_input();
         let secu_uart_tx_pin = self.gpio.get_pin(gpio::PsocPin::P9_3);
         secu_uart_tx_pin.preconfigure(&GPIO_SEC_DEBUG_UART_TX_CONFIG);
-        secu_uart_tx_pin.set_nonsecure(false);
+        secu_uart_tx_pin.set_security(gpio::SecurityState::Secure);
     }
 
     /// Initialize all peripherals.
