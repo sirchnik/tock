@@ -305,7 +305,7 @@ impl Psc3DefaultPeripherals<'_> {
         Self {
             scb3: scb::Scb::new_scb3(),
             tcpwm: tcpwm::Tcpwm0::new(),
-            gpio: gpio,
+            gpio,
         }
     }
 
