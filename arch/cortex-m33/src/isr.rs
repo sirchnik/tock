@@ -16,16 +16,19 @@
 //!    preempt the secure world, track the app's secure state, and properly
 //!    switch back when execution resumes.
 
-// These constants are defined in the linker script.
-extern "C" {
-    static _estack: u8;
-    static _sstack: u8;
-}
-
 /// ARMv8-M systick handler function.
 ///
 /// For documentation of this function, please see
 /// `CortexMVariant::SYSTICK_HANDLER`.
+///
+/// # Safety
+///
+/// - INPUTS:
+///   - This reads the `lr`, which is part of the calling convention.
+/// - OUTPUTS:
+///   - This writes to `r0`, a caller-saved register.
+///   - This writes to `r1`, a caller-saved register.
+/// - This does not fall-through, it branches at the end.
 #[cfg(any(doc, all(target_arch = "arm", target_os = "none")))]
 #[unsafe(naked)]
 pub unsafe extern "C" fn systick_handler() {
@@ -36,7 +39,7 @@ pub unsafe extern "C" fn systick_handler() {
     // only if we are preempting a process (SPSEL bit is set).
     tst lr, #4                        // Test SPSEL bit (bit 2)
     beq 50f                           // Skip if kernel was running
-    ldr r0, =PROCESS_WAS_SECURE       // r0 = &PROCESS_WAS_SECURE
+    ldr r0, ={process_was_secure}     // r0 = &PROCESS_WAS_SECURE
     ubfx r1, lr, #6, #1               // r1 = (LR >> 6) & 1
     str r1, [r0]                      // *PROCESS_WAS_SECURE = r1
 50:
@@ -65,7 +68,8 @@ pub unsafe extern "C" fn systick_handler() {
     // This will resume in the switch_to_user function where application state
     // is saved and the scheduler can choose what to do next.
     bx lr
-        "
+        ",
+        process_was_secure = sym crate::syscall::PROCESS_WAS_SECURE,
     );
 }
 
@@ -73,6 +77,15 @@ pub unsafe extern "C" fn systick_handler() {
 ///
 /// For documentation of this function, please see
 /// `CortexMVariant::SVC_HANDLER`.
+///
+/// # Safety
+///
+/// - INPUTS:
+///   - This reads the `lr`, which is part of the calling convention.
+/// - OUTPUTS:
+///   - This writes to `r0`, a caller-saved register.
+///   - This writes to `r1`, a caller-saved register.
+/// - This does not fall-through, it branches in both arms of the branch.
 #[cfg(any(doc, all(target_arch = "arm", target_os = "none")))]
 #[unsafe(naked)]
 pub unsafe extern "C" fn svc_handler() {
@@ -111,7 +124,7 @@ pub unsafe extern "C" fn svc_handler() {
     // Restore secure state bit in EXC_RETURN for the process.
     // Clear bit 6 first, then conditionally set it based on PROCESS_WAS_SECURE.
     bfc lr, #6, #1                    // LR = LR & !(1<<6)
-    ldr r0, =PROCESS_WAS_SECURE       // r0 = &PROCESS_WAS_SECURE
+    ldr r0, ={process_was_secure}     // r0 = &PROCESS_WAS_SECURE
     ldr r0, [r0]                      // r0 = *PROCESS_WAS_SECURE
     cmp r0, #0                        // r0 == 0?
     it ne
@@ -123,7 +136,7 @@ pub unsafe extern "C" fn svc_handler() {
 100: // to_kernel
     // Save bit 6 (secure state) of EXC_RETURN to PROCESS_WAS_SECURE.
     // The process may have been executing in the secure world.
-    ldr r0, =PROCESS_WAS_SECURE       // r0 = &PROCESS_WAS_SECURE
+    ldr r0, ={process_was_secure}     // r0 = &PROCESS_WAS_SECURE
     ubfx r1, lr, #6, #1               // r1 = (LR >> 6) & 1
     str r1, [r0]                      // *PROCESS_WAS_SECURE = r1
 
@@ -131,7 +144,7 @@ pub unsafe extern "C" fn svc_handler() {
     // `SYSCALL_FIRED` which is stored in the syscall file.
     // `UserspaceKernelBoundary` will use this variable to decide why the app
     // stopped executing.
-    ldr r0, =SYSCALL_FIRED            // r0 = &SYSCALL_FIRED
+    ldr r0, ={syscall_fired}          // r0 = &SYSCALL_FIRED
     mov r1, #1                        // r1 = 1
     str r1, [r0]                      // *SYSCALL_FIRED = 1
 
@@ -158,13 +171,25 @@ pub unsafe extern "C" fn svc_handler() {
 
     // Return to the kernel.
     bx lr
-        "
+        ",
+        process_was_secure = sym crate::syscall::PROCESS_WAS_SECURE,
+        syscall_fired = sym cortexm::syscall::SYSCALL_FIRED,
     );
 }
 
 /// Generic interrupt handler for ARMv8-M instruction sets.
 ///
 /// For documentation of this function, see `CortexMVariant::GENERIC_ISR`.
+///
+/// # Safety
+///
+/// - INPUTS:
+///   - This reads the `lr`, which is part of the calling convention.
+/// - OUTPUTS:
+///   - This writes to `r0`, a caller-saved register.
+///   - This writes to `r2`, a caller-saved register.
+///   - This writes to `r3`, a caller-saved register.
+/// - This does not fall-through, it branches at the end.
 #[cfg(any(doc, all(target_arch = "arm", target_os = "none")))]
 #[unsafe(naked)]
 pub unsafe extern "C" fn generic_isr() {
@@ -175,7 +200,7 @@ pub unsafe extern "C" fn generic_isr() {
     // only if we are preempting a process (SPSEL bit is set).
     tst lr, #4                        // Test SPSEL bit (bit 2)
     beq 50f                           // Skip if kernel was running
-    ldr r0, =PROCESS_WAS_SECURE       // r0 = &PROCESS_WAS_SECURE
+    ldr r0, ={process_was_secure}     // r0 = &PROCESS_WAS_SECURE
     ubfx r1, lr, #6, #1               // r1 = (LR >> 6) & 1
     str r1, [r0]                      // *PROCESS_WAS_SECURE = r1
 50:
@@ -245,7 +270,8 @@ pub unsafe extern "C" fn generic_isr() {
     // doing. If an app was executing we will switch to the kernel so it can
     // choose whether to service the interrupt.
     bx lr
-        "
+        ",
+        process_was_secure = sym crate::syscall::PROCESS_WAS_SECURE,
     );
 }
 
@@ -260,8 +286,38 @@ pub unsafe fn switch_to_user(
     process_regs: &mut [usize; 8],
 ) -> *const usize {
     use core::arch::asm;
-    asm!(
-        "
+    // # Safety
+    //
+    // - INPUTS:
+    //   - This uses `r0`, which is specified as an input from `user_stack`.
+    //   - This uses `r1`, which is specified as an input from `process_regs`.
+    // - CALLER-SAVED registers:
+    //   - This uses `r6`, which is replaced before exiting asm.
+    //   - This uses `r7`, which is replaced before exiting asm.
+    //   - This uses `r9`, which is replaced before exiting asm.
+    // - OUTPUTS:
+    //   - This writes `r0` which is specified as an output.
+    //   - This writes `r2` which is specified as an output.
+    //   - This writes `r3` which is specified as an output.
+    //   - This writes `r4` which is specified as an output.
+    //   - This writes `r5` which is specified as an output.
+    //   - This writes `r8` which is specified as an output.
+    //   - This writes `r10` which is specified as an output.
+    //   - This writes `r11` which is specified as an output.
+    //   - This writes `r12` which is specified as an output.
+    // - Options set:
+    // - Options not set:
+    //   - nomem: We read and write memory.
+    //   - nostack: We use the stack.
+    //   - preserves_flags: This likely change flags in userspace.
+    //   - pure: not required
+    //   - readonly: implied by nomem
+    //   - noreturn: we do fall-through
+    //   - att_syntax: not on arm
+    //   - raw: not required
+    unsafe {
+        asm!(
+            "
     // Rust `asm!()` macro (as of May 2021) will not let us mark r6, r7 and r9
     // as clobbers. r6 and r9 is used internally by LLVM, and r7 is used for
     // the frame pointer. However, in the process of restoring and saving the
@@ -307,19 +363,20 @@ pub unsafe fn switch_to_user(
     mov r7, r3                        // r7 = r3
     mov r9, r12                       // r9 = r12
         ",
-        inout("r0") user_stack,
-        in("r1") process_regs,
-        out("r2") _,
-        out("r3") _,
-        out("r4") _,
-        out("r5") _,
-        out("r8") _,
-        out("r10") _,
-        out("r11") _,
-        out("r12") _,
-    );
+            inout("r0") user_stack,
+            in("r1") process_regs,
+            out("r2") _,
+            out("r3") _,
+            out("r4") _,
+            out("r5") _,
+            out("r8") _,
+            out("r10") _,
+            out("r11") _,
+            out("r12") _,
+        );
 
-    user_stack
+        user_stack
+    }
 }
 
 #[cfg(any(doc, all(target_arch = "arm", target_os = "none")))]
@@ -331,22 +388,69 @@ unsafe extern "C" fn hard_fault_handler_kernel(faulting_stack: *mut u32, stack_o
         panic!("kernel stack overflow");
     } else {
         // Show the normal kernel hardfault message.
-        let stacked_r0: u32 = *faulting_stack.add(0);
-        let stacked_r1: u32 = *faulting_stack.add(1);
-        let stacked_r2: u32 = *faulting_stack.add(2);
-        let stacked_r3: u32 = *faulting_stack.add(3);
-        let stacked_r12: u32 = *faulting_stack.add(4);
-        let stacked_lr: u32 = *faulting_stack.add(5);
-        let stacked_pc: u32 = *faulting_stack.add(6);
-        let stacked_xpsr: u32 = *faulting_stack.add(7);
+
+        // Get the stacked copies of caller-saved registers and other state.
+        //
+        // # Safety
+        //
+        // Because we verified there was not a stack overflow when the hardware
+        // pushed these values to the stack, these are valid pointers to
+        // allocated memory.
+        let (
+            stacked_r0,
+            stacked_r1,
+            stacked_r2,
+            stacked_r3,
+            stacked_r12,
+            stacked_lr,
+            stacked_pc,
+            stacked_xpsr,
+        ) = unsafe {
+            let r0: u32 = *faulting_stack.add(0);
+            let r1: u32 = *faulting_stack.add(1);
+            let r2: u32 = *faulting_stack.add(2);
+            let r3: u32 = *faulting_stack.add(3);
+            let r12: u32 = *faulting_stack.add(4);
+            let lr: u32 = *faulting_stack.add(5);
+            let pc: u32 = *faulting_stack.add(6);
+            let xpsr: u32 = *faulting_stack.add(7);
+
+            (r0, r1, r2, r3, r12, lr, pc, xpsr)
+        };
 
         let mode_str = "Kernel";
 
-        let shcsr: u32 = core::ptr::read_volatile(0xE000ED24 as *const u32);
-        let cfsr: u32 = core::ptr::read_volatile(0xE000ED28 as *const u32);
-        let hfsr: u32 = core::ptr::read_volatile(0xE000ED2C as *const u32);
-        let mmfar: u32 = core::ptr::read_volatile(0xE000ED34 as *const u32);
-        let bfar: u32 = core::ptr::read_volatile(0xE000ED38 as *const u32);
+        // Extract symbols from the linker script
+        let (estack, sstack) = {
+            // # Safety
+            //
+            // Linker script symbols are value-less entities, a concept that
+            // does not map onto any actual Rust type (as of July 2026). The
+            // only valid operation on these "types" is taking their address.
+            // We scope the declaration to a dedicated block here to ensure no
+            // invalid access attempts.
+            unsafe extern "C" {
+                static _estack: u8;
+                static _sstack: u8;
+            }
+            let estack: u32 = core::ptr::addr_of!(_estack) as u32;
+            let sstack: u32 = core::ptr::addr_of!(_sstack) as u32;
+            (estack, sstack)
+        };
+
+        // Read system status registers.
+        //
+        // # Safety
+        //
+        // These are the valid locations of 32-bit registers.
+        let (shcsr, cfsr, hfsr, mmfar, bfar) = unsafe {
+            let shcsr: u32 = core::ptr::read_volatile(0xE000ED24 as *const u32);
+            let cfsr: u32 = core::ptr::read_volatile(0xE000ED28 as *const u32);
+            let hfsr: u32 = core::ptr::read_volatile(0xE000ED2C as *const u32);
+            let mmfar: u32 = core::ptr::read_volatile(0xE000ED34 as *const u32);
+            let bfar: u32 = core::ptr::read_volatile(0xE000ED38 as *const u32);
+            (shcsr, cfsr, hfsr, mmfar, bfar)
+        };
 
         let iaccviol = (cfsr & 0x01) == 0x01;
         let daccviol = (cfsr & 0x02) == 0x02;
@@ -438,8 +542,8 @@ unsafe extern "C" fn hard_fault_handler_kernel(faulting_stack: *mut u32, stack_o
             exception_number,
             ipsr_isr_number_to_str(exception_number),
             faulting_stack as u32,
-            core::ptr::addr_of!(_estack) as u32,
-            core::ptr::addr_of!(_sstack) as u32,
+            estack,
+            sstack,
             shcsr,
             cfsr,
             hfsr,
@@ -474,9 +578,35 @@ unsafe extern "C" fn hard_fault_handler_kernel(faulting_stack: *mut u32, stack_o
 ///
 /// For documentation of this function, please see
 /// `CortexMVariant::HARD_FAULT_HANDLER_HANDLER`.
+///
+/// # Safety
+///
+/// - INPUTS:
+///   - This reads the `lr`, which is part of the calling convention.
+/// - OUTPUTS:
+///   - This writes to `r0`, a caller-saved register.
+///   - This writes to `r1`, a caller-saved register.
+///   - This writes to `r2`, a caller-saved register.
+///   - This writes to `r3`, a caller-saved register.
+/// - This does not fall-through, it branches at the end.
 #[cfg(any(doc, all(target_arch = "arm", target_os = "none")))]
 #[unsafe(naked)]
 pub unsafe extern "C" fn hard_fault_handler() {
+    // These constants are defined in the linker script.
+    //
+    // # Safety
+    //
+    // Linker script symbols are value-less entities, a concept that does not
+    // map onto any actual Rust type (as of July 2026).  This method only uses
+    // these declarations to pass their address to the assembly. By declaring
+    // these variables within this naked fn, we ensure that no Rust code
+    // attempts to access them, and assert that the assembly will take only the
+    // address, which is well-defined.
+    unsafe extern "C" {
+        static _estack: u8;
+        static _sstack: u8;
+    }
+
     use core::arch::naked_asm;
     // First need to determine if this a kernel fault or a userspace fault, and store
     // the unmodified stack pointer. Place these values in registers, then call
@@ -525,7 +655,7 @@ pub unsafe extern "C" fn hard_fault_handler() {
     bne {kernel_hard_fault_handler} // branch to kernel hard fault handler
     // Otherwise, the hard fault occurred in userspace. In this case, read
     // the relevant SCB registers:
-    ldr r0, =SCB_REGISTERS    // Global variable address
+    ldr r0, ={scb_registers}  // Global variable address
     ldr r1, =0xE000ED14       // SCB CCR register address
     ldr r2, [r1, #0]          // CCR
     str r2, [r0, #0]
@@ -538,7 +668,7 @@ pub unsafe extern "C" fn hard_fault_handler() {
     ldr r2, [r1, #36]         // BFAR
     str r2, [r0, #16]
 
-    ldr r0, =APP_HARD_FAULT  // Global variable address
+    ldr r0, ={app_hard_fault}// Global variable address
     mov r1, #1               // r1 = 1
     str r1, [r0, #0]         // APP_HARD_FAULT = 1
 
@@ -558,6 +688,8 @@ pub unsafe extern "C" fn hard_fault_handler() {
         ",
         estack = sym _estack,
         kernel_hard_fault_handler = sym hard_fault_handler_kernel,
+        app_hard_fault = sym cortexm::syscall::APP_HARD_FAULT,
+        scb_registers = sym cortexm::syscall::SCB_REGISTERS,
     );
 }
 
