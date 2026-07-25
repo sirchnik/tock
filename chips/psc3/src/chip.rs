@@ -113,6 +113,7 @@ pub const GPIO_SEC_DEBUG_UART_TX_CONFIG: gpio::PreConfig = gpio::PreConfig {
 /// This function configures the secure/non-secure attribute for all GPIO pins.
 ///
 /// **It must be called from the secure world before transitioning to the non-secure world.**
+#[inline(never)]
 pub fn configure_gpio_secure_states() -> Result<(), ()> {
     let gpio = gpio::PsocPins::new(gpio::SecurityState::Secure);
 
@@ -132,6 +133,7 @@ pub fn configure_gpio_secure_states() -> Result<(), ()> {
     Ok(())
 }
 
+#[inline(never)]
 pub fn init_scb0_uart_pins() -> Result<(), ()> {
     let gpio = gpio::PsocPins::new(gpio::SecurityState::Secure);
     let sec_uart_rx_pin = gpio.get_pin(gpio::PsocPin::P9_2)?;

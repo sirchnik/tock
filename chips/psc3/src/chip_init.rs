@@ -12,6 +12,7 @@ use crate::srss;
 /// Pre-initialize peripherals that are required for further system initialization.
 /// Activates essential clocks.
 /// Without this step, some peripherals do not work and abort the debugger connection.
+#[inline(never)]
 pub fn preinit_peripherals() {
     srss::sys_init_enable_clocks();
     peri::sys_init_enable_peri();
@@ -30,6 +31,7 @@ fn init_pwr() {
 }
 
 /// Initialize system clocks, unlock watchdog and set flash wait states.
+#[inline(never)]
 pub fn init_system() -> Result<(), ()> {
     flashc::set_waitstates(false, 180);
 
