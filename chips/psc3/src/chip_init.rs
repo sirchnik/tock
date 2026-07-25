@@ -30,7 +30,7 @@ fn init_pwr() {
 }
 
 /// Initialize system clocks, unlock watchdog and set flash wait states.
-pub fn init_system() {
+pub fn init_system() -> Result<(), ()> {
     flashc::set_waitstates(false, 180);
 
     /* Unlock WDT to be able to modify LFCLK registers */
@@ -43,11 +43,13 @@ pub fn init_system() {
 
     srss::init_clock_paths();
 
-    srss::init_dpll_lp().unwrap();
+    srss::init_dpll_lp()?;
 
     srss::init_clk_hf();
     srss::init_clk_path0();
 
-    srss::init_fll().unwrap();
+    srss::init_fll()?;
     srss::init_clk_hf0();
+
+    Ok(())
 }
